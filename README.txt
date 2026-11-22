@@ -1,77 +1,176 @@
-CASEGRAPH — FUNCTIONAL DBMS PROJECT BUILD
+# CaseGraph 🕵️
 
-This build prioritizes real database workflows and analysis over UI redesign.
+**An interactive detective game where you investigate cases, interrogate people, uncover clues, connect evidence, and solve mysteries.**
 
-CONTENTS
-- app.py: Flask app, PostgreSQL-backed CRUD APIs, validation, health endpoint, conflict analysis, recursive relationship path finder.
-- templates/index.html / static/: dashboard and working controls.
-- seed_demo.py: creates a complete fictional investigation case once; safe to run repeatedly and never drops/resets data.
-- dbms_demo_queries.sql: demonstration queries for joins, aggregation, HAVING, recursive CTE, contradiction detection, integrity check, and transaction/rollback.
-- schema.sql: schema export supplied with your project. Do not rerun it on an existing database unless you intend to restore the schema separately.
+CaseGraph is a detective investigation game built around a structured investigation system. Players work through case briefings, conduct interviews, validate investigative insights, uncover clues, connect evidence, reconstruct events, and ultimately make accusations.
 
-DATABASE CONNECTION (PowerShell)
-Set DATABASE_URL in the same PowerShell window used to start Flask. For a password containing @, encode it as %40 in the URL.
-Example only:
-$env:DATABASE_URL = "postgresql://postgres:YOUR_URL_ENCODED_PASSWORD@localhost:5432/casegraph"
+Every investigation is driven by the information the player discovers and the connections they establish—not simply by selecting a suspect.
 
-SEED THE FICTIONAL CASE
-1. Open PowerShell in this project directory.
-2. Set DATABASE_URL as above.
-3. Run: python seed_demo.py
-4. It creates "The Missing Prototype — Complete Demonstration Case" with five people, six evidence records, six relationship edges, and eight timeline events. One deliberate conflict places Rahul Sharma in the Applied Systems Lab and University Library at the exact same verified timestamp. The case and all people/events are fictional.
-5. Running it again detects the case title and avoids duplicating the demo records.
+## 🎮 Gameplay
 
-RUN APP
-python app.py
-Open http://127.0.0.1:5000 and select the new demo case from the case selector.
+The game follows a progressive investigation loop:
 
-FUNCTIONALITY
-- PostgreSQL-backed case dashboard and case selector.
-- Add people, add evidence (optional person links), change evidence verification status, delete evidence with foreign-key protection.
-- Add timeline events with location and optional source evidence; validates case membership.
-- Add relationship edges and find a shortest recorded path using a recursive CTE.
-- Relationship graph, timeline, global search, strict/potential conflict analysis, and print-ready report use database records.
-- /api/health reports database connection status.
+1. **Case Briefing** — Begin with an incident report and understand the circumstances surrounding the case.
+2. **Investigation** — Explore the case, interview characters, and gather information.
+3. **Insight Validation** — Validate deductions to unlock additional clues and advance the investigation.
+4. **Evidence Collection** — Discover and file evidence into the case.
+5. **Relationship Analysis** — Connect people and evidence to uncover meaningful relationships.
+6. **Timeline Reconstruction** — Build a chronological understanding of events.
+7. **Accusation** — Use the information gathered to identify and accuse the responsible individual.
+8. **Case Resolution** — Complete the investigation and receive a score based on your performance.
 
-API QUICK REFERENCE
-GET  /api/health
-GET  /api/cases
-GET  /api/dashboard?case_id=ID
-GET  /api/people?case_id=ID
-POST /api/people                 JSON: case_id, full_name, occupation, role
-GET  /api/evidence?case_id=ID
-POST /api/evidence               JSON: case_id, title, description, evidence_type, verification_status, people:[{person_id,involvement}]
-PATCH /api/evidence/ID           JSON: case_id, verification_status
-DELETE /api/evidence/ID?case_id=ID
-GET  /api/relationships?case_id=ID
-POST /api/relationships          JSON: case_id, person_id, related_person_id, relationship_type
-GET  /api/timeline?case_id=ID
-POST /api/timeline               JSON: case_id, person_id, event_time, location_name, description, source_evidence_id, is_verified
-GET  /api/analysis/paths?case_id=ID&from_person=ID&to_person=ID&max_depth=6
-GET  /api/contradictions?case_id=ID
-GET  /api/report?case_id=ID
+## 🧩 Core Mechanics
 
-DBMS DEMO CHECKLIST
-1. Show schema.sql / ER diagram and explain PKs, FKs, CHECK constraints, and junction tables.
-2. Add a person and evidence in the app; refresh and show it persists.
-3. Change evidence verification status; show conflict analysis updates as applicable.
-4. Add a timeline event with a source evidence record.
-5. Add a relationship and use Find path to demonstrate recursive SQL.
-6. Run dbms_demo_queries.sql in pgAdmin or psql to demonstrate JOIN, LEFT JOIN, GROUP BY/HAVING, recursive CTE, contradiction detection, and rollback.
-7. Explain that the conflict detector finds a data inconsistency; it does not prove guilt or determine which account is true.
+- **Interactive Investigations** — Progress through structured cases instead of passively reading a mystery.
+- **Interviews** — Interact with characters to obtain information relevant to the investigation.
+- **Insight-Based Progression** — Validate investigative insights to unlock clues and advance the case.
+- **Evidence Filing** — Collect and record evidence as your investigation progresses.
+- **Relationship Discovery** — Establish connections between people and investigative elements.
+- **Timeline Analysis** — Reconstruct the sequence of events.
+- **Deduction & Accusation** — Reach conclusions based on the information uncovered.
+- **Scoring System** — Your investigation is evaluated upon case completion.
 
-SAFETY / LIMITATIONS
-- Fictional training data only. Do not enter real personal or sensitive data.
-- No operation drops tables or resets the existing database.
-- Cases and people are not deleted by the UI, to avoid accidental loss of linked records.
-- This is a local educational Flask development server, not a production deployment.
-- A record marked verified is a user-entered status; the app does not independently authenticate evidence.
+## 🔍 Investigation System
 
+CaseGraph uses a connected investigation model in which cases, people, evidence, relationships, and events are stored and linked through a relational database.
 
-PERSON AVATARS AND PHOTO UPLOAD
-1. Back up your project folder.
-2. Open pgAdmin, select the existing casegraph database, open Query Tool, and run gender_photo_migration.sql once. This adds nullable gender/photo_path columns and preserves existing data.
-3. Install dependencies already listed in your project's setup (Flask and psycopg).
-4. Set DATABASE_URL as you normally do, then run: python app.py
-5. Open People and select a person. Use Upload / Change Photo or Remove Photo in the dossier. New or edited people can use male, female, or blank gender; blank shows initials. A custom photo overrides the default avatar.
-Photos are stored under static/uploads/people; the database stores only their relative paths. Upload limit is 5 MB.
+These connections support the investigative gameplay, allowing information gathered during a case to become part of a larger picture.
+
+The system combines game progression with database-backed persistence for investigation sessions, evidence, relationships, timeline events, and case outcomes.
+
+## 🗂️ Cases
+
+The game contains individual investigations with their own scenarios, information, clues, and conclusions.
+
+- **The Last Signal** — Case 001
+- **The Missing Prototype** — A separate investigation
+
+Each case is designed around uncovering information, validating deductions, and working toward a resolution.
+
+## 🛠️ Tech Stack
+
+| Technology | Role |
+|---|---|
+| Python | Game logic and backend |
+| Flask | Web application and routing |
+| PostgreSQL | Persistent investigation data |
+| SQL | Database operations and analytical queries |
+| HTML | Application structure |
+| CSS | Interface styling |
+| JavaScript | Interactive gameplay and frontend behavior |
+
+## 🏗️ Architecture
+
+```text
+Player
+  │
+  ▼
+Web Interface
+HTML · CSS · JavaScript
+  │
+  ▼
+Flask Application
+  │
+  ├── Case & Session Logic
+  ├── Interview System
+  ├── Insight Validation
+  ├── Clue Progression
+  ├── Evidence Handling
+  ├── Relationship Analysis
+  ├── Timeline System
+  └── Scoring & Accusation
+  │
+  ▼
+PostgreSQL Database
+  │
+  ├── Cases
+  ├── People
+  ├── Evidence
+  ├── Relationships
+  ├── Timeline Events
+  └── Investigation Progress
+```
+
+## 🗄️ Database Design
+
+PostgreSQL serves as the persistent foundation of the game.
+
+The project incorporates:
+
+- Relational database design
+- Primary and foreign keys
+- Entity relationships
+- Data integrity constraints
+- SQL joins and multi-table queries
+- Persistent game and investigation state
+- Database migrations
+- Structured evidence and timeline records
+
+The database is not merely used to store game data—it supports the investigation mechanics and progression of the game.
+
+## 🧪 Testing
+
+CaseGraph includes tests for investigation progression, game-loop behavior, and advanced functionality.
+
+```text
+test_stage1_loop.py
+test_full_game_loop.py
+test_advanced_features.py
+```
+
+The full investigation loop has been tested, including clue progression, evidence persistence, scoring, accusation, and case completion.
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Python 3
+- PostgreSQL
+- Git
+
+### Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/AkshatBansal06/CaseGraph.git
+cd CaseGraph
+```
+
+Configure your PostgreSQL database and application connection settings.
+
+Initialize the database using the provided schema and required migrations.
+
+Install the dependencies required by the application.
+
+### Launch
+
+On Windows, launch the application using:
+
+```text
+Start CaseGraph.bat
+```
+
+Alternatively, start the Flask application using the appropriate Python configuration.
+
+> Database setup and configuration are required before starting the game.
+
+## 🎯 Project Objective
+
+CaseGraph explores how database systems, backend logic, and interactive gameplay can work together to create an investigation-driven experience.
+
+It combines detective gameplay with relational data modeling, persistent game state, clue progression, and interconnected investigative information.
+
+---
+
+## 👨‍💻 Developer
+
+**Akshat Bansal**
+
+B.Tech — Computer Science & Engineering
+
+[GitHub Profile](https://github.com/AkshatBansal06)
+
+## 🔗 Repository
+
+[github.com/AkshatBansal06/CaseGraph](https://github.com/AkshatBansal06/CaseGraph)
