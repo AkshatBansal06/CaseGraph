@@ -1,0 +1,193 @@
+
+# ---------------- Functional CRUD and analysis endpoints ----------------
+def payload():
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+
+def required_text(data, key, limit, label=None):
+    value = str(data.get(key, '') or '').strip()
+    if not value:
+        raise ValueError(f'{label or key.replace("_", " ").title()} is required.')
+    if len(value) > limit:
+        raise ValueError(f'{label or key.replace("_", " ").title()} must be {limit} characters or fewer.')
+    return value
+
+
+@app.get('/api/people')
+def list_people():
+    case_id = valid_case_id(request.args.get('case_id'))
+    if not case_id: return api_error('Invalid case ID.')
+    with db() as conn, conn.cursor() as cur:
+        cur.execute('''SELECT p.person_id,p.full_name,p.occupation,cp.role,
+            (SELECT count(*) FROM evidence_people ep JOIN evidence e USING(evidence_id) WHERE ep.person_id=p.person_id AND e.case_id=cp.case_id) evidence_count
+            FROM case_persons cp JOIN persons p USING(person_id) WHERE cp.case_id=%s ORDER BY p.full_name''',(case_id,))
+        return jsonify(cur.fetchall())
+
+
+@app.post('/api/people')
+def create_person():
+    data=payload(); case_id=valid_case_id(data.get('case_id'))
+    if not case_id: return api_error('A valid case_id is required.')
+    try:
+        name=required_text(data,'full_name',100,'Full name')
+        occupation=str(data.get('occupation','') or '').strip()[:100] or None
+        role=str(data.get('role','other') or 'other').strip().lower()
+        if role not in ('suspect','witness','investigator','other'): raise ValueError('Role must be suspect, witness, investigator, or other.')
+        with db() as conn, conn.cursor() as cur:
+            cur.execute('SELECT 1 FROM cases WHERE case_id=%s',(case_id,))
+            if not cur.fetchone(): return api_error('Case not found.',404)
+            cur.execute('INSERT INTO persons(full_name,occupation) VALUES(%s,%s) RETURNING person_id',(name,occupation)); pid=cur.fetchone()['person_id']
+            cur.execute('INSERT INTO case_persons(case_id,person_id,role) VALUES(%s,%s,%s)',(case_id,pid,role))
+        return jsonify({'ok':True,'person_id':pid,'message':'Person created and linked to case.'}),201
+    except ValueError as e: return api_error(str(e))
+    except (CheckViolation,UniqueViolation,ForeignKeyViolation) as e: return api_error(f'Database constraint: {e.diag.message_primary}')
+
+
+@app.get('/api/evidence')
+def list_evidence():
+    case_id=valid_case_id(request.args.get('case_id'))
+    if not case_id: return api_error('Invalid case ID.')
+    with db() as conn, conn.cursor() as cur:
+        cur.execute('''SELECT e.evidence_id,e.case_id,e.title,e.description,e.evidence_type,e.verification_status,e.recorded_at,
+          COALESCE(json_agg(json_build_object('person_id',p.person_id,'full_name',p.full_name,'involvement',ep.involvement)) FILTER(WHERE p.person_id IS NOT NULL),'[]') linked_people
+          FROM evidence e LEFT JOIN evidence_people ep USING(evidence_id) LEFT JOIN persons p USING(person_id)
+          WHERE e.case_id=%s GROUP BY e.evidence_id ORDER BY e.recorded_at DESC,e.evidence_id DESC''',(case_id,))
+        return jsonify(cur.fetchall())
+
+
+@app.post('/api/evidence')
+def create_evidence():
+    data=payload(); case_id=valid_case_id(data.get('case_id'))
+    if not case_id: return api_error('A valid case_id is required.')
+    try:
+        title=required_text(data,'title',150,'Title'); description=required_text(data,'description',10000,'Description')
+        evidence_type=required_text(data,'evidence_type',40,'Evidence type').lower().replace(' ','_')
+        status=str(data.get('verification_status','unverified') or 'unverified').lower()
+        if status not in ('unverified','verified','disputed'): raise ValueError('Status must be unverified, verified, or disputed.')
+        linked=data.get('people',[])
+        if not isinstance(linked,list): raise ValueError('people must be a list of person IDs.')
+        with db() as conn, conn.cursor() as cur:
+            cur.execute('SELECT 1 FROM cases WHERE case_id=%s',(case_id,))
+            if not cur.fetchone(): return api_error('Case not found.',404)
+            cur.execute('INSERT INTO evidence(case_id,title,description,evidence_type,verification_status) VALUES(%s,%s,%s,%s,%s) RETURNING evidence_id',(case_id,title,description,evidence_type,status)); eid=cur.fetchone()['evidence_id']
+            for item in linked:
+                pid=int(item.get('person_id') if isinstance(item,dict) else item)
+                involvement=(str(item.get('involvement','associated')) if isinstance(item,dict) else 'associated').strip()[:50] or 'associated'
+                cur.execute('SELECT 1 FROM case_persons WHERE case_id=%s AND person_id=%s',(case_id,pid))
+                if not cur.fetchone(): raise ValueError(f'Person {pid} is not linked to this case.')
+                cur.execute('INSERT INTO evidence_people(evidence_id,person_id,involvement) VALUES(%s,%s,%s)',(eid,pid,involvement))
+        return jsonify({'ok':True,'evidence_id':eid,'message':'Evidence saved to PostgreSQL.'}),201
+    except ValueError as e: return api_error(str(e))
+    except (CheckViolation,UniqueViolation,ForeignKeyViolation) as e: return api_error(f'Database constraint: {e.diag.message_primary}')
+
+
+@app.patch('/api/evidence/<int:evidence_id>')
+def update_evidence(evidence_id):
+    data=payload(); status=str(data.get('verification_status','')).lower()
+    if status not in ('unverified','verified','disputed'): return api_error('Status must be unverified, verified, or disputed.')
+    case_id=valid_case_id(data.get('case_id'))
+    if not case_id: return api_error('A valid case_id is required.')
+    with db() as conn, conn.cursor() as cur:
+        cur.execute('UPDATE evidence SET verification_status=%s WHERE evidence_id=%s AND case_id=%s RETURNING evidence_id',(status,evidence_id,case_id))
+        row=cur.fetchone()
+        if not row: return api_error('Evidence not found in this case.',404)
+    return jsonify({'ok':True,'message':f'Evidence marked {status}.'})
+
+
+@app.delete('/api/evidence/<int:evidence_id>')
+def delete_evidence(evidence_id):
+    case_id=valid_case_id(request.args.get('case_id'))
+    if not case_id: return api_error('A valid case_id is required.')
+    try:
+        with db() as conn, conn.cursor() as cur:
+            cur.execute('DELETE FROM evidence WHERE evidence_id=%s AND case_id=%s RETURNING evidence_id',(evidence_id,case_id))
+            if not cur.fetchone(): return api_error('Evidence not found in this case.',404)
+        return jsonify({'ok':True,'message':'Evidence deleted.'})
+    except ForeignKeyViolation:
+        return api_error('Cannot delete this evidence because a timeline event cites it. Remove or update the source reference first.',409)
+
+
+@app.get('/api/relationships')
+def list_relationships():
+    case_id=valid_case_id(request.args.get('case_id'))
+    if not case_id: return api_error('Invalid case ID.')
+    with db() as conn, conn.cursor() as cur:
+        cur.execute('''SELECT r.relationship_id,r.person_id,p.full_name person_name,r.related_person_id,p2.full_name related_person,r.relationship_type
+          FROM person_relationships r JOIN persons p ON p.person_id=r.person_id JOIN persons p2 ON p2.person_id=r.related_person_id
+          WHERE r.case_id=%s ORDER BY p.full_name,p2.full_name''',(case_id,))
+        return jsonify(cur.fetchall())
+
+
+@app.post('/api/relationships')
+def create_relationship():
+    data=payload(); case_id=valid_case_id(data.get('case_id'))
+    if not case_id: return api_error('A valid case_id is required.')
+    try:
+        person_id=int(data.get('person_id')); related_id=int(data.get('related_person_id'))
+        relation=required_text(data,'relationship_type',50,'Relationship type')
+        if person_id==related_id: raise ValueError('A person cannot be related to themselves.')
+        with db() as conn, conn.cursor() as cur:
+            for pid in (person_id,related_id):
+                cur.execute('SELECT 1 FROM case_persons WHERE case_id=%s AND person_id=%s',(case_id,pid))
+                if not cur.fetchone(): raise ValueError(f'Person {pid} is not linked to this case.')
+            cur.execute('INSERT INTO person_relationships(case_id,person_id,related_person_id,relationship_type) VALUES(%s,%s,%s,%s) RETURNING relationship_id',(case_id,person_id,related_id,relation))
+            rid=cur.fetchone()['relationship_id']
+        return jsonify({'ok':True,'relationship_id':rid,'message':'Relationship recorded.'}),201
+    except (TypeError,ValueError) as e: return api_error(str(e) or 'Person IDs must be integers.')
+    except (CheckViolation,ForeignKeyViolation) as e: return api_error(f'Database constraint: {e.diag.message_primary}')
+
+
+@app.post('/api/timeline')
+def create_timeline_event():
+    data=payload(); case_id=valid_case_id(data.get('case_id'))
+    if not case_id: return api_error('A valid case_id is required.')
+    try:
+        person_id=int(data.get('person_id')); event_time=required_text(data,'event_time',40,'Event time')
+        description=required_text(data,'description',10000,'Description'); location=required_text(data,'location_name',100,'Location')
+        source=data.get('source_evidence_id') or None; verified=bool(data.get('is_verified',False))
+        with db() as conn, conn.cursor() as cur:
+            cur.execute('SELECT 1 FROM case_persons WHERE case_id=%s AND person_id=%s',(case_id,person_id))
+            if not cur.fetchone(): raise ValueError('Person is not linked to this case.')
+            if source:
+                cur.execute('SELECT 1 FROM evidence WHERE case_id=%s AND evidence_id=%s',(case_id,int(source)))
+                if not cur.fetchone(): raise ValueError('Source evidence must belong to this case.')
+            cur.execute('INSERT INTO locations(location_name) VALUES(%s) ON CONFLICT(location_name) DO UPDATE SET location_name=EXCLUDED.location_name RETURNING location_id',(location,)); lid=cur.fetchone()['location_id']
+            cur.execute('''INSERT INTO timeline_events(case_id,person_id,location_id,event_time,description,source_evidence_id,is_verified)
+              VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING event_id''',(case_id,person_id,lid,event_time,description,source,verified))
+            eid=cur.fetchone()['event_id']
+        return jsonify({'ok':True,'event_id':eid,'message':'Timeline event recorded.'}),201
+    except (TypeError,ValueError) as e: return api_error(str(e) or 'Invalid event data.')
+    except (CheckViolation,ForeignKeyViolation) as e: return api_error(f'Database constraint: {e.diag.message_primary}')
+
+
+@app.get('/api/analysis/paths')
+def relationship_paths():
+    case_id=valid_case_id(request.args.get('case_id'))
+    try: start=int(request.args.get('from_person')); target=int(request.args.get('to_person')); max_depth=min(8,max(1,int(request.args.get('max_depth',6))))
+    except (TypeError,ValueError): return api_error('Provide from_person and to_person integer IDs.')
+    if not case_id: return api_error('Invalid case ID.')
+    with db() as conn, conn.cursor() as cur:
+        cur.execute('''WITH RECURSIVE edges(a,b,relationship_type) AS (
+          SELECT person_id,related_person_id,relationship_type FROM person_relationships WHERE case_id=%s
+          UNION ALL SELECT related_person_id,person_id,relationship_type FROM person_relationships WHERE case_id=%s
+        ), paths(node,path,labels,depth) AS (
+          SELECT %s::int, ARRAY[%s::int], ARRAY[]::text[], 0
+          UNION ALL SELECT e.b, p.path || e.b, p.labels || e.relationship_type, p.depth+1
+          FROM paths p JOIN edges e ON e.a=p.node WHERE p.depth<%s AND NOT e.b=ANY(p.path)
+        ) SELECT path,labels,depth FROM paths WHERE node=%s ORDER BY depth LIMIT 1''',(case_id,case_id,start,start,max_depth,target))
+        result=cur.fetchone()
+        if not result: return jsonify({'found':False,'message':'No relationship path found within the selected depth.'})
+        cur.execute('SELECT person_id,full_name FROM persons WHERE person_id=ANY(%s)',(result['path'],)); names={r['person_id']:r['full_name'] for r in cur.fetchall()}
+        return jsonify({'found':True,'depth':result['depth'],'path':result['path'],'names':[names.get(pid,f'Person {pid}') for pid in result['path']],'relationships':result['labels']})
+
+
+@app.get('/api/health')
+def health():
+    try:
+        with db() as conn, conn.cursor() as cur:
+            cur.execute('SELECT current_database() AS database, current_user AS username, version() AS version')
+            info=cur.fetchone()
+        return jsonify({'ok':True,**info})
+    except psycopg.OperationalError:
+        return api_error('PostgreSQL connection failed. Check DATABASE_URL in this PowerShell session.',503)

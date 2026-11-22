@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CaseGraph — Investigation Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="#dashboard" aria-label="CaseGraph home"><span class="brand-mark"><i data-lucide="fingerprint"></i></span><span class="brand-copy"><strong>CASE<span>GRAPH</span></strong><small>INVESTIGATION DESK</small></span></a>
+    <div class="side-label">WORKSPACE</div>
+    <nav class="side-nav" aria-label="Main navigation">
+      <button class="nav-item active" data-view="dashboard"><i data-lucide="layout-dashboard"></i><span>Overview</span><kbd>01</kbd></button>
+      <button class="nav-item" data-view="interviews"><i data-lucide="messages-square"></i><span>Interview Room</span><kbd>02</kbd></button>
+      <button class="nav-item" data-view="board"><i data-lucide="trello"></i><span>Evidence Board</span><kbd>03</kbd></button>
+      <button class="nav-item" data-view="search"><i data-lucide="terminal"></i><span>Search Terminal</span><kbd>04</kbd></button>
+      <button class="nav-item" data-view="people"><i data-lucide="users"></i><span>People</span><kbd>05</kbd></button>
+      <button class="nav-item" data-view="evidence"><i data-lucide="file-search"></i><span>Evidence vault</span><kbd>06</kbd></button>
+      <button class="nav-item" data-view="relationships"><i data-lucide="network"></i><span>Relationship graph</span><kbd>07</kbd></button>
+      <button class="nav-item" data-view="timeline"><i data-lucide="git-commit-horizontal"></i><span>Timeline</span><kbd>08</kbd></button>
+      <button class="nav-item" data-view="analysis"><i data-lucide="scan-search"></i><span>Analysis lab</span><kbd>09</kbd></button>
+    </nav>
+    <div class="side-label side-label-spaced">DATABASE & TOOLS</div>
+    <nav class="side-nav">
+      <button class="nav-item" data-view="dbms"><i data-lucide="database"></i><span>DBMS Query Lab</span></button>
+      <button class="nav-item" data-view="reports"><i data-lucide="file-chart-column"></i><span>Reports</span></button>
+    </nav>
+    <div class="sidebar-spacer"></div>
+    <div class="case-mini"><div class="mini-top"><span class="live-dot"></span><span>SELECTED CASE</span><i data-lucide="ellipsis"></i></div><strong id="miniCaseTitle">Loading case…</strong><div class="mini-bottom"><span id="miniCaseId">CASE —</span><span class="status-pill" id="miniCaseStatus">—</span></div></div>
+    <div class="sidebar-foot"><span class="avatar avatar-small">AB</span><div><strong>Analyst workspace</strong><small>Local environment</small></div><i data-lucide="settings-2"></i></div>
+  </aside>
+
+  <main class="main-area">
+    <header class="topbar">
+      <button class="icon-btn mobile-menu" id="menuBtn" aria-label="Toggle menu"><i data-lucide="menu"></i></button>
+      <div class="breadcrumbs"><span>CASEGRAPH</span><i data-lucide="chevron-right"></i><strong id="crumbCurrent">Overview</strong></div>
+      <div class="top-actions">
+        <label class="global-search"><i data-lucide="search"></i><input id="globalSearch" placeholder="Search people, evidence, places…" autocomplete="off"><kbd>⌘ K</kbd><div id="searchResults" class="search-results hidden"></div></label>
+        <span class="top-divider"></span>
+        <div class="case-select-wrap"><i data-lucide="folder-open"></i><select id="caseSelect" aria-label="Select case">{% for c in cases %}<option value="{{ c.case_id }}" {% if c.case_id == selected_case_id %}selected{% endif %}>{{ c.title }}</option>{% endfor %}</select><i data-lucide="chevron-down"></i></div>
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme"><i data-lucide="sun-moon"></i></button>
+        <div class="avatar">AB</div>
+      </div>
+    </header>
+
+    <div class="content-wrap">
+      <section class="page-view active" id="view-dashboard">
+        <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-dot"></span> INVESTIGATION WORKSPACE <span class="eyebrow-line"></span><span id="todayLabel">CASE INTELLIGENCE</span></div><h1>Every clue has a <em>connection.</em></h1><p class="subhead">A clearer picture emerges when evidence, people, and time come together.</p></div><div class="heading-actions"><button class="btn btn-quiet" id="exportBtn"><i data-lucide="download"></i> Export report</button><button class="btn btn-primary" data-go="evidence"><i data-lucide="plus"></i> Add evidence <span class="btn-arrow">↗</span></button></div></div>
+        <div class="hero-grid">
+          <article class="case-hero panel"><div class="case-hero-glow"></div><div class="hero-meta"><span class="tag tag-cyan"><i data-lucide="scan-eye"></i> ACTIVE INVESTIGATION</span><span class="mono" id="heroCaseNumber">CASE / —</span></div><div class="hero-content"><div class="hero-folder"><i data-lucide="folder-search"></i></div><h2 id="heroCaseTitle">Loading selected case…</h2><p id="heroCaseDescription">Connecting to the case database and gathering the available records.</p><div class="hero-footer"><span><i data-lucide="calendar-days"></i> Opened <strong id="heroCreated">—</strong></span><span class="status-pill" id="heroStatus">—</span></div></div><div class="hero-watermark">CG<span>.</span></div></article>
+          <div class="stat-grid">
+            <article class="stat-card panel"><div class="stat-top"><span>PEOPLE OF INTEREST</span><span class="stat-icon cyan"><i data-lucide="users"></i></span></div><div class="stat-value" id="statPeople">—</div><div class="stat-bottom"><span class="stat-note">Linked to this case</span><span class="stat-spark cyan-spark">••••••</span></div></article>
+            <article class="stat-card panel"><div class="stat-top"><span>EVIDENCE ITEMS</span><span class="stat-icon purple"><i data-lucide="file-check-2"></i></span></div><div class="stat-value" id="statEvidence">—</div><div class="stat-bottom"><span class="stat-note">Recorded in vault</span><span class="stat-spark purple-spark">••••••</span></div></article>
+            <article class="stat-card panel"><div class="stat-top"><span>TIMELINE EVENTS</span><span class="stat-icon amber"><i data-lucide="git-commit-horizontal"></i></span></div><div class="stat-value" id="statEvents">—</div><div class="stat-bottom"><span class="stat-note">Chronological records</span><span class="stat-spark amber-spark">••••••</span></div></article>
+            <article class="stat-card panel"><div class="stat-top"><span>CONFIRMED CONFLICTS</span><span class="stat-icon red"><i data-lucide="shield-alert"></i></span></div><div class="stat-value" id="statConflicts">—</div><div class="stat-bottom"><span class="stat-note">Strict timestamp rule</span><button class="text-action" data-go="analysis">Review <i data-lucide="arrow-up-right"></i></button></div></article>
+          </div>
+        </div>
+        <div class="section-head"><div><div class="eyebrow">CASE NETWORK</div><h2>People of interest <span class="count-badge" id="peopleCount">0</span></h2></div><button class="text-action" data-go="people">View all people <i data-lucide="arrow-right"></i></button></div>
+        <div class="people-grid" id="peopleGrid"><div class="loading-card"><span class="loader"></span> Loading people linked to this case…</div></div>
+        <div class="dashboard-lower">
+          <section class="panel section-panel graph-preview"><div class="panel-heading"><div><div class="eyebrow">CONNECTION MAPPING</div><h3>Relationship network</h3></div><button class="icon-btn" data-go="relationships" aria-label="Open graph"><i data-lucide="arrow-up-right"></i></button></div><div class="graph-mini-wrap"><div id="miniGraph" class="mini-graph"></div><div class="graph-legend"><span><i class="legend-dot cyan-dot"></i> Person</span><span><i class="legend-line"></i> Relationship from records</span></div></div><button class="btn btn-outline btn-full" data-go="relationships">Explore relationship graph <i data-lucide="arrow-right"></i></button></section>
+          <section class="panel section-panel evidence-preview"><div class="panel-heading"><div><div class="eyebrow">LATEST RECORDS</div><h3>Evidence vault</h3></div><button class="icon-btn" data-go="evidence" aria-label="Open evidence"><i data-lucide="arrow-up-right"></i></button></div><div id="evidencePreview" class="evidence-list"><div class="empty-state">Loading evidence…</div></div><button class="btn btn-outline btn-full" data-go="evidence">Open evidence vault <i data-lucide="arrow-right"></i></button></section>
+          <section class="panel section-panel timeline-preview"><div class="panel-heading"><div><div class="eyebrow">SEQUENCE OF EVENTS</div><h3>Recent timeline</h3></div><button class="icon-btn" data-go="timeline" aria-label="Open timeline"><i data-lucide="arrow-up-right"></i></button></div><div id="timelinePreview" class="timeline-list"><div class="empty-state">Loading timeline…</div></div><button class="btn btn-outline btn-full" data-go="timeline">Review full timeline <i data-lucide="arrow-right"></i></button></section>
+        </div>
+        <div class="footer-note"><span><i data-lucide="database"></i> LIVE POSTGRESQL DATA</span><span>CASEGRAPH <b>•</b> EDUCATIONAL INVESTIGATION SYSTEM</span></div>
+      </section>
+
+      <section class="page-view" id="view-interviews">
+        <div class="page-heading compact-heading">
+          <div>
+            <div class="eyebrow"><span class="eyebrow-dot"></span> FIELD OPERATIONS <span class="eyebrow-line"></span><span>RECORDED INTERVIEWS</span></div>
+            <h1>Interview <em>Room.</em></h1>
+            <p class="subhead">Question witnesses and suspects. Manually analyze testimony to flag insights and unlock clues.</p>
+          </div>
+          <div class="heading-actions">
+            <span class="status-pill" id="sessionBadge">NO ACTIVE SESSION</span>
+            <button class="btn btn-quiet" id="openBriefingBtn"><i data-lucide="book-open"></i> Incident Briefing</button>
+            <button class="btn btn-primary" id="openAccuseBtn" style="background:linear-gradient(90deg,#e0445d,#ff6b57);border-color:#ff7a66"><i data-lucide="scale"></i> Final Accusation ↗</button>
+            <button class="btn btn-primary" id="startSessionBtn"><i data-lucide="play"></i> Start / Resume Session</button>
+          </div>
+        </div>
+
+        <div class="panel" style="padding:14px 18px;margin-bottom:16px;border-color:rgba(83,224,208,0.25);background:linear-gradient(90deg,#09141d,#0c1d27)">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="eyebrow" style="margin:0"><i data-lucide="compass" style="width:12px;height:12px;vertical-align:-1px;display:inline-block"></i> INVESTIGATION PROGRESS</span>
+              <span class="status-pill" id="investigationStageBadge">INITIAL RECONNAISSANCE</span>
+            </div>
+            <div style="font:600 12px 'DM Mono',monospace;color:var(--cyan)">
+              <span id="progressPercent">0%</span> READINESS
+            </div>
+          </div>
+          <div class="progress-bar-rail" style="height:6px;background:#15222b;border-radius:3px;overflow:hidden;margin-bottom:12px">
+            <div id="progressBarFill" class="progress-bar-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#208985,#53e0d0);transition:width .4s ease"></div>
+          </div>
+          <div class="game-subnav" style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn btn-quiet game-subnav-btn active" data-subtab="interrogate"><i data-lucide="messages-square"></i> Interrogation Chamber</button>
+            <button type="button" class="btn btn-quiet game-subnav-btn" data-subtab="clues"><i data-lucide="search"></i> Discovered Clues & Connections <span class="count-badge" id="subtabCluesCount">0</span></button>
+            <button type="button" class="btn btn-quiet game-subnav-btn" data-subtab="notebook"><i data-lucide="book-marked"></i> Detective Notebook & Contradictions</button>
+          </div>
+        </div>
+
+        <div class="stat-grid interview-stats-bar" style="margin-bottom:20px">
+          <article class="stat-card panel" style="min-height:90px;padding:12px 16px">
+            <div class="stat-top"><span>INVESTIGATION SCORE</span><span class="stat-icon cyan"><i data-lucide="award"></i></span></div>
+            <div class="stat-value" id="gameScore" style="font-size:24px;margin:4px 0">0</div>
+            <div class="stat-bottom"><span class="stat-note">Points earned</span></div>
+          </article>
+          <article class="stat-card panel" style="min-height:90px;padding:12px 16px">
+            <div class="stat-top"><span>CHARACTERS FOUND</span><span class="stat-icon purple"><i data-lucide="users"></i></span></div>
+            <div class="stat-value" id="gameChars" style="font-size:24px;margin:4px 0">0 / 10</div>
+            <div class="stat-bottom"><span class="stat-note">Persons questioned</span></div>
+          </article>
+          <article class="stat-card panel" style="min-height:90px;padding:12px 16px">
+            <div class="stat-top"><span>CLUES UNLOCKED</span><span class="stat-icon amber"><i data-lucide="search"></i></span></div>
+            <div class="stat-value" id="gameClues" style="font-size:24px;margin:4px 0">0 / 12</div>
+            <div class="stat-bottom"><span class="stat-note">Discovered from insights</span></div>
+          </article>
+          <article class="stat-card panel" style="min-height:90px;padding:12px 16px">
+            <div class="stat-top"><span>INSIGHTS FLAGGED</span><span class="stat-icon red"><i data-lucide="lightbulb"></i></span></div>
+            <div class="stat-value" id="gameInsights" style="font-size:24px;margin:4px 0">0</div>
+            <div class="stat-bottom"><span class="stat-note">Documented in file</span></div>
+          </article>
+        </div>
+
+        <div id="subtab-interrogate" class="game-subtab active">
+          <div class="interview-layout">
+            <aside class="panel interview-roster">
+              <div class="panel-heading" style="margin-bottom:8px">
+                <div>
+                  <div class="eyebrow">PERSONS OF INTEREST</div>
+                  <h3 style="font-size:15px">Case Directory</h3>
+                </div>
+                <span class="count-badge" id="rosterCount">0</span>
+              </div>
+              <p class="muted" style="margin-bottom:12px">Select a person to question them.</p>
+              <div id="rosterList" class="roster-list"></div>
+            </aside>
+
+            <section class="panel interview-main">
+              <div class="panel-heading" style="border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:12px">
+                <div>
+                  <div class="eyebrow" id="interrogatedRole">SELECT A CHARACTER</div>
+                  <h3 id="interrogatedName" style="font-size:18px">No person selected</h3>
+                  <p class="muted" id="interrogatedBio" style="margin-top:4px">Choose a character from the directory to begin questioning.</p>
+                </div>
+                <span class="tag tag-cyan" id="recordedTag"><i data-lucide="mic"></i> TRANSCRIPT RECORDED</span>
+              </div>
+
+              <div id="dialogueTranscript" class="dialogue-transcript">
+                <div class="empty-state">Select a character and ask a question. Responses are grounded in approved case testimony.</div>
+              </div>
+
+              <form id="interviewForm" class="interview-form" style="margin-top:14px">
+                <div style="display:flex;gap:8px">
+                  <input id="interviewQuestion" class="inline-search" style="flex:1;width:auto;font-size:12px" placeholder="Type your question in your own words..." maxlength="1000" disabled required>
+                  <button type="submit" id="interviewSubmitBtn" class="btn btn-primary" disabled><i data-lucide="send"></i> Ask ↗</button>
+                </div>
+                <div style="margin-top:10px">
+                  <div class="eyebrow" style="margin-bottom:6px">SUGGESTED INQUIRIES & WITNESS TOPICS:</div>
+                  <div class="quick-chips" id="quickChips" style="display:flex;gap:6px;flex-wrap:wrap">
+                    <span class="muted" style="font-size:11px">Select a character above to view specialized inquiry topics.</span>
+                  </div>
+                </div>
+              </form>
+            </section>
+
+            <aside class="panel insight-desk">
+              <div class="panel-heading" style="margin-bottom:10px">
+                <div>
+                  <div class="eyebrow">DEDUCTION DESK</div>
+                  <h3 style="font-size:15px">Flag Insight</h3>
+                </div>
+                <i data-lucide="brain-circuit" style="color:var(--cyan)"></i>
+              </div>
+              <p class="muted" style="margin-bottom:14px">Did the character say something suspicious? Manually flag the insight below to unlock leads and score points.</p>
+
+              <form id="insightForm">
+                <label style="display:block;margin-bottom:10px">
+                  <span class="eyebrow" style="margin-bottom:4px">CITED STATEMENT</span>
+                  <select id="insightDialogueSelect" style="width:100%;background:#0d1720;color:var(--text);border:1px solid #263744;border-radius:8px;padding:8px;font-size:11px" disabled>
+                    <option value="">Select a statement from transcript...</option>
+                  </select>
+                </label>
+
+                <label style="display:block;margin-bottom:10px">
+                  <span class="eyebrow" style="margin-bottom:4px">INSIGHT CATEGORY</span>
+                  <select id="insightCategorySelect" style="width:100%;background:#0d1720;color:var(--text);border:1px solid #263744;border-radius:8px;padding:8px;font-size:11px" disabled required>
+                    <option value="">Choose category...</option>
+                    <option value="contradiction">Contradiction</option>
+                    <option value="suspicious_timing">Suspicious timing</option>
+                    <option value="timeline_inconsistency">Timeline inconsistency</option>
+                    <option value="relationship">Relationship</option>
+                    <option value="physical_evidence">Physical evidence</option>
+                    <option value="motive">Motive</option>
+                    <option value="opportunity">Opportunity</option>
+                    <option value="access_location">Access to a location</option>
+                    <option value="possible_deception">Possible deception</option>
+                  </select>
+                </label>
+
+                <label style="display:block;margin-bottom:12px">
+                  <span class="eyebrow" style="margin-bottom:4px">INVESTIGATOR'S NOTES</span>
+                  <textarea id="insightNotes" rows="3" style="width:100%;background:#0d1720;color:var(--text);border:1px solid #263744;border-radius:8px;padding:8px;font-size:11px;resize:vertical;font-family:inherit" placeholder="Explain your deduction or reasoning..." maxlength="2000" disabled></textarea>
+                </label>
+
+                <button type="submit" id="insightSubmitBtn" class="btn btn-primary" style="width:100%" disabled>
+                  <i data-lucide="check-circle-2"></i> Submit Insight
+                </button>
+              </form>
+
+              <div id="insightFeedback" style="margin-top:14px;display:none"></div>
+
+              <div style="border-top:1px solid var(--line);margin-top:18px;padding-top:12px">
+                <div class="eyebrow" style="margin-bottom:8px">SESSION CASE NOTES (<span id="sessionNotesCount">0</span>)</div>
+                <div id="sessionNotesList" style="display:grid;gap:8px;max-height:220px;overflow-y:auto"></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <!-- Subtab: Clues & Connections -->
+        <div id="subtab-clues" class="game-subtab hidden">
+          <div class="panel" style="padding:20px;margin-bottom:16px">
+            <div class="panel-heading" style="margin-bottom:8px">
+              <div>
+                <div class="eyebrow">CASE EVIDENCE LEADS</div>
+                <h3 style="font-size:17px">Discovered Clues & DBMS Filing</h3>
+              </div>
+              <span class="tag tag-cyan" id="cluesFoundBadge">0 / 12 UNLOCKED</span>
+            </div>
+            <p class="muted" style="margin-bottom:16px">These leads were unlocked through witness testimony and deduction breakthroughs. Connect them to suspects, or file them directly into the PostgreSQL Evidence Vault to earn +5 points per record.</p>
+            <div id="cluesListGrid" class="clue-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px">
+              <div class="empty-state">No clues unlocked yet. Question witnesses and flag deductions to discover leads.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtab: Detective Notebook & Contradictions -->
+        <div id="subtab-notebook" class="game-subtab hidden">
+          <div style="display:grid;gap:18px">
+            <div class="panel" style="padding:20px;border-color:rgba(255,127,145,0.3)">
+              <div class="panel-heading" style="margin-bottom:10px">
+                <div>
+                  <div class="eyebrow" style="color:var(--red)"><i data-lucide="alert-triangle" style="width:12px;height:12px;display:inline-block;vertical-align:-1px"></i> FORENSIC BREAKPOINTS</div>
+                  <h3 style="font-size:17px">Critical Case Contradictions</h3>
+                </div>
+                <span class="tag tag-red">VITAL FOR ACCUSATION</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+                <div class="panel" style="background:#0e161e;padding:14px;border-left:3px solid var(--red)">
+                  <strong style="color:var(--red);display:block;font-size:12px;margin-bottom:4px">1. Time of Death vs Transmission</strong>
+                  <p style="font-size:11px;line-height:1.5;color:var(--text);margin:0">Dr. Shaw's medical exam sets death between <strong>22:15 and 22:35</strong>. Yet the radio broadcast aired at <strong>23:47</strong>. Nadia confirms Voss queued a diagnostic warning earlier at 22:10.</p>
+                </div>
+                <div class="panel" style="background:#0e161e;padding:14px;border-left:3px solid var(--amber)">
+                  <strong style="color:var(--amber);display:block;font-size:12px;margin-bottom:4px">2. The 7-Minute Camera Blackout</strong>
+                  <p style="font-size:11px;line-height:1.5;color:var(--text);margin:0">Security cameras covering the hallway were suppressed from <strong>22:16 to 22:23</strong>. Director Cole claimed to be in administration all night, but maintenance logs show a Director credential override at 22:14.</p>
+                </div>
+                <div class="panel" style="background:#0e161e;padding:14px;border-left:3px solid var(--cyan)">
+                  <strong style="color:var(--cyan);display:block;font-size:12px;margin-bottom:4px">3. The Sealed Room & Service Hatch</strong>
+                  <p style="font-size:11px;line-height:1.5;color:var(--text);margin:0">The communications room door was latched from inside with no sign of forced entry. Maintenance lead Theo Pike reveals a concealed <strong>cable-service hatch</strong> behind the console leading into the crawlspace.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel" style="padding:20px">
+              <div class="panel-heading" style="margin-bottom:12px">
+                <div>
+                  <div class="eyebrow">FIELD DOSSIER</div>
+                  <h3 style="font-size:17px">Suspect Cross-Examination Matrix</h3>
+                </div>
+                <span class="count-badge" id="notebookSuspectsCount">0 STAFF</span>
+              </div>
+              <div id="notebookSuspectsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-view" id="view-board">
+        <div class="page-heading compact-heading">
+          <div>
+            <div class="eyebrow"><span class="eyebrow-dot"></span> INVESTIGATION DESK <span class="eyebrow-line"></span><span>FORENSIC PINBOARD</span></div>
+            <h1>Interactive Evidence <em>Board.</em></h1>
+            <p class="subhead">Pin suspects, physical evidence, discovered clues, and timeline events. Establish and test investigative theories persisted directly to PostgreSQL.</p>
+          </div>
+          <div class="heading-actions">
+            <span class="status-pill" id="boardSessionBadge">SESSION ACTIVE</span>
+            <button class="btn btn-quiet" id="boardRefreshBtn"><i data-lucide="rotate-cw"></i> Refresh Board</button>
+            <button class="btn btn-primary" id="boardQuickConnectBtn"><i data-lucide="plus"></i> New Connection</button>
+          </div>
+        </div>
+
+        <div class="board-container">
+          <!-- Left: Filter bar & Board Entities Grid -->
+          <div class="board-main-panel">
+            <div class="panel board-filter-bar">
+              <div class="board-filters">
+                <button type="button" class="board-filter-btn active" data-board-filter="all">All Entities (<span id="boardTotalCount">0</span>)</button>
+                <button type="button" class="board-filter-btn" data-board-filter="person"><i data-lucide="users"></i> Suspects & Staff (<span id="boardPersonCount">0</span>)</button>
+                <button type="button" class="board-filter-btn" data-board-filter="evidence"><i data-lucide="file-check-2"></i> Vault Evidence (<span id="boardEvidenceCount">0</span>)</button>
+                <button type="button" class="board-filter-btn" data-board-filter="clue"><i data-lucide="search"></i> Discovered Clues (<span id="boardClueCount">0</span>)</button>
+                <button type="button" class="board-filter-btn" data-board-filter="timeline"><i data-lucide="git-commit-horizontal"></i> Timeline Events (<span id="boardTimelineCount">0</span>)</button>
+                <button type="button" class="board-filter-btn" data-board-filter="location"><i data-lucide="map-pin"></i> Locations (<span id="boardLocationCount">0</span>)</button>
+              </div>
+              <div class="muted" style="font-size:11px">Click card to select as Source or Target</div>
+            </div>
+
+            <div class="board-entities-grid" id="boardEntitiesGrid">
+              <div class="empty-state">Loading board entities…</div>
+            </div>
+          </div>
+
+          <!-- Right: Theory Desk & Connection Manager -->
+          <div class="board-desk-panel">
+            <!-- Theory Connection Form -->
+            <div class="panel board-theory-form">
+              <div class="panel-heading" style="margin-bottom:0">
+                <div>
+                  <div class="eyebrow"><i data-lucide="git-branch" style="width:11px;height:11px;display:inline-block;vertical-align:-1px"></i> HYPOTHESIS LAB</div>
+                  <h3 style="font-size:15px">Establish Connection</h3>
+                </div>
+                <span class="tag tag-cyan">POSTGRESQL SYNC</span>
+              </div>
+              <p class="muted" style="font-size:11px;margin:0">Link any two entities to form an investigative theory. CaseGraph evaluates your hypothesis against verified case facts.</p>
+
+              <form id="boardConnectionForm">
+                <div class="board-form-group">
+                  <label>1. Source Entity</label>
+                  <select id="boardSourceSelect" required>
+                    <option value="">Select source entity…</option>
+                  </select>
+                </div>
+
+                <div class="board-form-group">
+                  <label>2. Connection Type</label>
+                  <select id="boardConnectionTypeSelect" required>
+                    <option value="connected_to">Connected To (General Link)</option>
+                    <option value="contradicts">Contradicts (Factual / Temporal Conflict)</option>
+                    <option value="supports">Supports (Corroborating Proof)</option>
+                    <option value="present_at">Was Present At (Spatial / Temporal Presence)</option>
+                    <option value="has_access_to">Has Access To (Credentials / Opportunity)</option>
+                    <option value="possible_motive">Possible Motive (Grievance / Cover-up)</option>
+                    <option value="associated_with">Associated With (Professional / Personal)</option>
+                  </select>
+                </div>
+
+                <div class="board-form-group">
+                  <label>3. Target Entity</label>
+                  <select id="boardTargetSelect" required>
+                    <option value="">Select target entity…</option>
+                  </select>
+                </div>
+
+                <div class="board-form-group">
+                  <label>4. Detective's Theory & Rationale</label>
+                  <textarea id="boardNotesInput" rows="2" placeholder="Explain why this connection matters to the investigation…" maxlength="1000"></textarea>
+                </div>
+
+                <button type="submit" id="saveBoardConnectionBtn" class="btn btn-primary" style="width:100%">
+                  <i data-lucide="check"></i> Establish Connection ↗
+                </button>
+              </form>
+
+              <div id="boardTheoryFeedback" style="display:none;padding:10px 12px;border-radius:8px;font-size:11px;line-height:1.5"></div>
+            </div>
+
+            <!-- Active Board Connections & Official Relationships -->
+            <div class="panel board-connections-panel">
+              <div class="panel-heading" style="margin-bottom:0">
+                <div>
+                  <div class="eyebrow">GRAPH EDGES</div>
+                  <h3 style="font-size:15px">Recorded Connections</h3>
+                </div>
+              </div>
+
+              <div class="board-tabs">
+                <button type="button" class="board-tab-btn active" data-board-tab="theories">Player Theories (<span id="boardTheoryCount">0</span>)</button>
+                <button type="button" class="board-tab-btn" data-board-tab="official">Official DBMS Links (<span id="boardOfficialCount">0</span>)</button>
+              </div>
+
+              <div class="board-conn-list" id="boardTheoryList">
+                <div class="empty-state">No theory connections added yet. Select two entities above to link them.</div>
+              </div>
+
+              <div class="board-conn-list hidden" id="boardOfficialList">
+                <div class="empty-state">Loading official DBMS relationships…</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-view" id="view-search">
+        <div class="page-heading compact-heading">
+          <div>
+            <div class="eyebrow"><span class="eyebrow-dot"></span> SEARCH & DISCOVERY <span class="eyebrow-line"></span><span>INDEXED QUERY TERMINAL</span></div>
+            <h1>Investigation Search <em>Terminal.</em></h1>
+            <p class="subhead">Search across case suspects, evidence records, recorded witness testimony, and timeline events using PostgreSQL text indexes.</p>
+          </div>
+          <div class="heading-actions">
+            <span class="status-pill" id="searchIndexBadge"><i data-lucide="database" style="width:10px;height:10px;display:inline-block;vertical-align:-1px"></i> POSTGRESQL INDEXED</span>
+          </div>
+        </div>
+
+        <div class="search-terminal-wrap">
+          <div class="terminal-search-box">
+            <div class="terminal-input-row">
+              <i data-lucide="search"></i>
+              <input type="text" id="terminalSearchInput" placeholder="Type name, evidence keyword, timestamp (e.g. 22:14), topic, or location..." autocomplete="off">
+              <button type="button" class="icon-btn" id="clearTerminalSearchBtn" aria-label="Clear search" style="border:none;background:transparent;color:#708694"><i data-lucide="x"></i></button>
+            </div>
+            <div class="terminal-chips">
+              <span class="muted" style="font-size:10px;font-family:'DM Mono',monospace">SUGGESTED QUERIES:</span>
+              <button type="button" class="terminal-chip" data-search-term="Adrian Cole">Adrian Cole</button>
+              <button type="button" class="terminal-chip" data-search-term="override">Override</button>
+              <button type="button" class="terminal-chip" data-search-term="cable hatch">Cable Hatch</button>
+              <button type="button" class="terminal-chip" data-search-term="22:15">22:15 Death Window</button>
+              <button type="button" class="terminal-chip" data-search-term="transmission">23:47 Transmission</button>
+              <button type="button" class="terminal-chip" data-search-term="camera blackout">Camera Blackout</button>
+              <button type="button" class="terminal-chip" data-search-term="Dr. Evelyn Shaw">Dr. Evelyn Shaw</button>
+            </div>
+          </div>
+
+          <div class="panel search-results-panel" style="padding:18px">
+            <div class="search-category-tabs">
+              <button type="button" class="search-cat-btn active" data-search-cat="all">All Results (<span id="searchCatCountAll">0</span>)</button>
+              <button type="button" class="search-cat-btn" data-search-cat="person">Persons (<span id="searchCatCountPerson">0</span>)</button>
+              <button type="button" class="search-cat-btn" data-search-cat="evidence">Evidence Vault (<span id="searchCatCountEvidence">0</span>)</button>
+              <button type="button" class="search-cat-btn" data-search-cat="clue">Unlocked Clues (<span id="searchCatCountClue">0</span>)</button>
+              <button type="button" class="search-cat-btn" data-search-cat="testimony">Recorded Testimony (<span id="searchCatCountTestimony">0</span>)</button>
+              <button type="button" class="search-cat-btn" data-search-cat="timeline">Timeline (<span id="searchCatCountTimeline">0</span>)</button>
+              <button type="button" class="search-cat-btn" data-search-cat="location">Locations (<span id="searchCatCountLocation">0</span>)</button>
+            </div>
+
+            <div class="search-result-cards" id="terminalResultsGrid">
+              <div class="empty-state">Enter a search keyword above or click a suggested query to search PostgreSQL case records.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-view" id="view-people"><div class="page-heading compact-heading"><div><div class="eyebrow">CASE DIRECTORY</div><h1>People <em>of interest.</em></h1><p class="subhead">Individuals linked to the selected investigation and their recorded connections.</p></div><div class="heading-actions"><button class="btn btn-primary" id="addPersonBtn"><i data-lucide="user-plus"></i> Add person</button></div></div><div id="allPeopleGrid" class="people-grid expanded-grid"></div></section>
+      <section class="page-view" id="view-evidence"><div class="page-heading compact-heading"><div><div class="eyebrow">EVIDENCE MANAGEMENT</div><h1>The evidence <em>vault.</em></h1><p class="subhead">Browse and verify the records associated with this case.</p></div><div class="heading-actions"><button class="btn btn-quiet" id="evidenceFilterBtn"><i data-lucide="list-filter"></i> Filter verified</button><button class="btn btn-primary" id="addEvidenceBtn"><i data-lucide="plus"></i> Add evidence</button></div></div><div class="filter-row"><label class="inline-search"><i data-lucide="search"></i><input id="evidenceSearch" placeholder="Filter evidence by title or type…"></label><span class="muted" id="evidenceTotal"></span></div><div id="allEvidence" class="evidence-table-wrap panel"></div><p class="hint-line"><i data-lucide="info"></i> Evidence changes are saved to PostgreSQL. Verification changes are auditable through the record status.</p></section>
+      <section class="page-view" id="view-relationships"><div class="page-heading compact-heading"><div><div class="eyebrow">CONNECTION MAPPING</div><h1>Relationship <em>graph.</em></h1><p class="subhead">Every node and edge below is loaded from your PostgreSQL case records.</p></div><div class="heading-actions"><button class="btn btn-quiet" id="findPathBtn"><i data-lucide="route"></i> Find path</button><button class="btn btn-primary" id="addRelationshipBtn"><i data-lucide="git-branch"></i> Add relationship</button><button class="btn btn-quiet" id="fitGraphBtn"><i data-lucide="maximize"></i> Fit graph</button></div></div><div class="panel full-graph-panel"><div class="graph-toolbar"><span><i class="legend-dot cyan-dot"></i> People <span class="toolbar-divider"></span><i class="legend-line"></i> Recorded relationships</span><span class="mono" id="graphCounts">LOADING NETWORK…</span></div><div id="fullGraph" class="full-graph"></div><div class="graph-bottom"><span class="muted">Select a node to open the person profile. Drag nodes to rearrange.</span><span class="graph-controls"><button class="icon-btn" id="zoomIn" aria-label="Zoom in"><i data-lucide="plus"></i></button><button class="icon-btn" id="zoomOut" aria-label="Zoom out"><i data-lucide="minus"></i></button></span></div></div></section>
+      <section class="page-view" id="view-timeline"><div class="page-heading compact-heading"><div><div class="eyebrow">CHRONOLOGY</div><h1>Timeline <em>analysis.</em></h1><p class="subhead">Review recorded events in chronological order with source and verification status.</p></div><div class="heading-actions"><button class="btn btn-quiet" id="addTimelineBtn"><i data-lucide="calendar-plus"></i> Add event</button><button class="btn btn-primary" id="runAnalysisBtn"><i data-lucide="scan-search"></i> Run conflict analysis</button></div></div><div class="panel timeline-full-panel"><div class="panel-heading"><div><div class="eyebrow">EVENT STREAM</div><h3>Recorded sequence</h3></div><span class="tag tag-neutral" id="timelineCount">0 EVENTS</span></div><div id="fullTimeline" class="full-timeline"></div></div></section>
+      <section class="page-view" id="view-analysis"><div class="page-heading compact-heading"><div><div class="eyebrow">FORENSIC REVIEW</div><h1>Analysis <em>lab.</em></h1><p class="subhead">Identify exact-time location conflicts without inferring facts the schema cannot support.</p></div><button class="btn btn-primary" id="runAnalysisBtn2"><i data-lucide="play"></i> Run analysis</button></div><div class="analysis-callout"><i data-lucide="shield-check"></i><div><strong>Transparent rule set</strong><p>A confirmed conflict requires the same person, the exact same timestamp, different locations, and both events marked verified. Potential conflicts involving unverified events are shown separately.</p></div></div><div class="analysis-columns"><section class="panel section-panel"><div class="panel-heading"><div><div class="eyebrow red-eyebrow">STRICT MATCH</div><h3>Confirmed conflicts</h3></div><span class="count-badge red-count" id="confirmedCount">0</span></div><div id="confirmedConflicts" class="conflict-list"></div></section><section class="panel section-panel"><div class="panel-heading"><div><div class="eyebrow amber-eyebrow">NEEDS REVIEW</div><h3>Potential conflicts</h3></div><span class="count-badge amber-count" id="potentialCount">0</span></div><div id="potentialConflicts" class="conflict-list"></div></section></div></section>
+      <section class="page-view" id="view-dbms">
+        <div class="page-heading compact-heading">
+          <div>
+            <div class="eyebrow"><span class="eyebrow-dot"></span> RELATIONAL ARCHITECTURE <span class="eyebrow-line"></span><span>DBMS EXPLORATION & BENCHMARKS</span></div>
+            <h1>DBMS Query <em>Lab.</em></h1>
+            <p class="subhead">Academic demonstration of PostgreSQL relational design, live query benchmarks, safe read-only SQL terminal, and relational schema graph.</p>
+          </div>
+          <div class="heading-actions">
+            <span class="status-pill"><i data-lucide="database" style="width:10px;height:10px;display:inline-block;vertical-align:-1px"></i> POSTGRESQL 16</span>
+          </div>
+        </div>
+
+        <!-- Subnav for DBMS Lab tabs -->
+        <div class="dbms-subnav">
+          <button type="button" class="dbms-nav-btn active" data-dbms-tab="explorer"><i data-lucide="table"></i> Database Explorer (<span id="dbmsTotalTables">32</span> Tables)</button>
+          <button type="button" class="dbms-nav-btn" data-dbms-tab="library"><i data-lucide="library"></i> Prebuilt Query Library (10)</button>
+          <button type="button" class="dbms-nav-btn" data-dbms-tab="terminal"><i data-lucide="terminal-square"></i> Safe SQL Terminal</button>
+          <button type="button" class="dbms-nav-btn" data-dbms-tab="schema"><i data-lucide="network"></i> Relational Schema Map</button>
+        </div>
+
+        <!-- Tab 1: Database Explorer -->
+        <div id="dbms-section-explorer" class="dbms-section active">
+          <div class="dbms-explorer-layout">
+            <aside class="panel" style="padding:16px;max-height:700px;display:flex;flex-direction:column;gap:12px">
+              <div class="panel-heading" style="margin-bottom:0">
+                <div>
+                  <div class="eyebrow">SCHEMA OBJECTS</div>
+                  <h3 style="font-size:15px">Public Tables</h3>
+                </div>
+              </div>
+              <input type="text" id="dbmsTableFilter" class="inline-search" placeholder="Filter tables…" style="width:100%;font-size:11px;padding:6px 10px">
+              <div id="dbmsTableList" style="display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1;padding-right:2px">
+                <div class="empty-state">Loading tables…</div>
+              </div>
+            </aside>
+
+            <main class="panel" id="dbmsTableDetail" style="padding:20px;display:flex;flex-direction:column;gap:16px;min-height:400px">
+              <div class="empty-state">Select a table from the list on the left to inspect its columns, keys, and live records.</div>
+            </main>
+          </div>
+        </div>
+
+        <!-- Tab 2: Prebuilt Query Library -->
+        <div id="dbms-section-library" class="dbms-section">
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="panel" style="padding:16px">
+              <div class="eyebrow" style="margin-bottom:6px">CURATED DBMS ANALYTICAL QUERIES</div>
+              <p class="muted" style="margin:0;font-size:11px">Execute real advanced SQL analytical queries against PostgreSQL. These queries demonstrate GROUP BY, aggregates, window functions, self-joins, CTEs, and relational cross-referencing.</p>
+            </div>
+
+            <div class="dbms-query-grid" id="dbmsQueryGrid">
+              <div class="empty-state">Loading query library…</div>
+            </div>
+
+            <!-- Query Execution Display -->
+            <div class="panel hidden" id="dbmsQueryOutputPanel" style="padding:20px;display:flex;flex-direction:column;gap:14px">
+              <div class="panel-heading" style="margin-bottom:0">
+                <div>
+                  <div class="eyebrow" id="dbmsExecutedCategory">ANALYTICAL QUERY EXECUTION</div>
+                  <h3 id="dbmsExecutedName" style="font-size:16px">Query Results</h3>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="status-pill" id="dbmsExecTimeBadge">0.00 ms</span>
+                  <span class="tag tag-cyan" id="dbmsExecRowsBadge">0 ROWS</span>
+                </div>
+              </div>
+              <div class="sql-display-box" id="dbmsExecutedSql"></div>
+              <div class="dbms-result-table-wrap" id="dbmsExecutedTableWrap"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Safe SQL Terminal -->
+        <div id="dbms-section-terminal" class="dbms-section">
+          <div class="panel" style="padding:20px;display:flex;flex-direction:column;gap:16px">
+            <div class="panel-heading" style="margin-bottom:0">
+              <div>
+                <div class="eyebrow"><i data-lucide="shield-check" style="width:11px;height:11px;display:inline-block;vertical-align:-1px"></i> SANDBOXED READ-ONLY SQL RUNNER</div>
+                <h3 style="font-size:16px">Interactive Query Console</h3>
+              </div>
+              <span class="tag tag-neutral">SET TRANSACTION READ ONLY</span>
+            </div>
+            <p class="muted" style="font-size:11px;margin:0">
+              Execute custom queries directly against the PostgreSQL database. Strict guardrails prevent any mutation (<code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>DROP</code>, etc.) and limit results to 50 rows.
+            </p>
+
+            <form id="dbmsCustomSqlForm">
+              <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn-quiet terminal-chip" data-sql-template="SELECT person_id, full_name, occupation, role FROM persons ORDER BY person_id;">List Persons</button>
+                <button type="button" class="btn btn-quiet terminal-chip" data-sql-template="SELECT evidence_id, title, evidence_type, verification_status FROM evidence WHERE case_id = 6;">Case 6 Evidence</button>
+                <button type="button" class="btn btn-quiet terminal-chip" data-sql-template="SELECT te.event_time, p.full_name, l.location_name, te.description FROM timeline_events te JOIN persons p ON p.person_id = te.person_id JOIN locations l ON l.location_id = te.location_id ORDER BY te.event_time ASC LIMIT 15;">Timeline Events</button>
+                <button type="button" class="btn btn-quiet terminal-chip" data-sql-template="SELECT pr.relationship_type, p1.full_name AS person, p2.full_name AS related_to FROM person_relationships pr JOIN persons p1 ON p1.person_id = pr.person_id JOIN persons p2 ON p2.person_id = pr.related_person_id WHERE pr.case_id = 6;">Relationships</button>
+              </div>
+              <textarea id="dbmsCustomSqlInput" rows="5" class="sql-display-box" style="width:100%;resize:vertical;border-color:#2a4455;outline:none" placeholder="Enter read-only SQL query (SELECT or WITH)...">SELECT person_id, full_name, occupation, role FROM persons ORDER BY person_id;</textarea>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;flex-wrap:wrap;gap:10px">
+                <span class="muted" style="font-size:10px">Press Run Query or Ctrl+Enter to execute. Mutations are blocked.</span>
+                <div style="display:flex;gap:8px">
+                  <button type="button" class="btn btn-quiet" id="dbmsClearSqlBtn">Clear</button>
+                  <button type="submit" class="btn btn-primary" id="dbmsRunCustomSqlBtn"><i data-lucide="play"></i> Execute Query ↗</button>
+                </div>
+              </div>
+            </form>
+
+            <div id="dbmsCustomResultBox" style="display:none;margin-top:10px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <div class="eyebrow" id="dbmsCustomResultHeading">QUERY RESULT</div>
+                <div style="display:flex;gap:8px">
+                  <span class="status-pill" id="dbmsCustomTimingBadge">0.00 ms</span>
+                  <span class="tag tag-cyan" id="dbmsCustomCountBadge">0 ROWS</span>
+                </div>
+              </div>
+              <div class="dbms-result-table-wrap" id="dbmsCustomTableWrap"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Relational Schema Map -->
+        <div id="dbms-section-schema" class="dbms-section">
+          <div class="panel full-graph-panel">
+            <div class="graph-toolbar">
+              <span><i class="legend-dot cyan-dot"></i> Database Tables <span class="toolbar-divider"></span><i class="legend-line"></i> Foreign Key Constraints</span>
+              <span class="mono" id="schemaGraphCounts">LOADING SCHEMA GRAPH…</span>
+            </div>
+            <div id="schemaCytoscapeGraph" class="full-graph" style="height:540px"></div>
+            <div class="graph-bottom">
+              <span class="muted">Live PostgreSQL foreign key dependency graph. Click a table node to inspect schema.</span>
+              <span class="graph-controls">
+                <button class="icon-btn" id="schemaFitBtn" aria-label="Fit schema graph"><i data-lucide="maximize"></i></button>
+                <button class="icon-btn" id="schemaZoomIn" aria-label="Zoom in"><i data-lucide="plus"></i></button>
+                <button class="icon-btn" id="schemaZoomOut" aria-label="Zoom out"><i data-lucide="minus"></i></button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-view" id="view-reports"><div class="page-heading compact-heading"><div><div class="eyebrow">DOCUMENTATION</div><h1>Case <em>reports.</em></h1><p class="subhead">Create a print-ready case summary from the current database records.</p></div><button class="btn btn-primary" id="printReportBtn"><i data-lucide="printer"></i> Print / save PDF</button></div><div id="reportPreview" class="panel report-preview"><div class="empty-state">Preparing report…</div></div></section>
+    </div>
+  </main>
+</div>
+
+<div class="detail-backdrop hidden" id="detailBackdrop"></div><aside class="detail-drawer" id="detailDrawer" aria-label="Person details"><div class="drawer-head"><div><div class="eyebrow">PERSON DOSSIER</div><span class="mono" id="drawerId">RECORD —</span></div><button class="icon-btn" id="closeDrawer" aria-label="Close details"><i data-lucide="x"></i></button></div><div id="personDetailContent" class="drawer-content"><div class="empty-state">Select a person to inspect their dossier.</div></div></aside>
+
+<!-- Modal: Incident Briefing -->
+<div class="game-modal-backdrop hidden" id="briefingModalBackdrop">
+  <div class="game-modal panel" role="dialog" aria-labelledby="briefingModalTitle">
+    <div class="game-modal-head">
+      <div>
+        <div class="eyebrow" style="color:var(--cyan)"><i data-lucide="shield-alert" style="width:12px;height:12px;display:inline-block;vertical-align:-1px"></i> BLACKRIDGE OBSERVATORY · OFFICIAL DISPATCH</div>
+        <h2 id="briefingModalTitle" style="font-size:20px;margin:4px 0 0">Case 001: <em>The Last Signal</em></h2>
+      </div>
+      <button type="button" class="icon-btn close-modal-btn" data-close-modal="briefingModalBackdrop" aria-label="Close modal"><i data-lucide="x"></i></button>
+    </div>
+    <div class="game-modal-body" style="font-size:12px;line-height:1.7;color:var(--text)">
+      <div class="panel" style="background:#09121a;border-left:3px solid var(--cyan);padding:14px;margin-bottom:14px">
+        <strong style="color:var(--cyan);font-size:13px;display:block;margin-bottom:6px">THE 23:47 DISTRESS TRANSMISSION:</strong>
+        <p style="margin:0;font-style:italic">"If you are hearing this, one of them is lying. Do not trust the time on the recording..."</p>
+      </div>
+      <p>At 06:20 following a violent mountain storm, lead researcher <strong>Dr. Elias Voss</strong> was found dead inside the communications room of Blackridge Observatory. The death has been ruled a homicide by blunt trauma.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0">
+        <div class="panel" style="padding:12px;background:#0d1822">
+          <strong style="display:block;color:#e2ecf0;margin-bottom:4px">Key Physical Facts:</strong>
+          <ul style="margin:0;padding-left:16px;font-size:11px;color:var(--dim)">
+            <li>Door deadbolted from the inside (latched mechanism).</li>
+            <li>Seven-minute security camera blackout (22:16 – 22:23).</li>
+            <li>Station master clock running 11 minutes slow.</li>
+          </ul>
+        </div>
+        <div class="panel" style="padding:12px;background:#0d1822">
+          <strong style="display:block;color:#e2ecf0;margin-bottom:4px">Detective Protocol:</strong>
+          <ul style="margin:0;padding-left:16px;font-size:11px;color:var(--dim)">
+            <li>Question witnesses & staff in the Interview Room.</li>
+            <li>Flag statements in the Deduction Desk to unlock clues.</li>
+            <li>File verified leads to PostgreSQL DBMS (+5 pts each).</li>
+            <li>Submit final accusation when evidence is sufficient.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="game-modal-footer" style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
+      <button type="button" class="btn btn-primary" data-close-modal="briefingModalBackdrop"><i data-lucide="compass"></i> Enter Investigation Desk</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Final Accusation Desk -->
+<div class="game-modal-backdrop hidden" id="accuseModalBackdrop">
+  <div class="game-modal panel" role="dialog" aria-labelledby="accuseModalTitle" style="max-width:620px">
+    <div class="game-modal-head">
+      <div>
+        <div class="eyebrow" style="color:var(--red)"><i data-lucide="scale" style="width:12px;height:12px;display:inline-block;vertical-align:-1px"></i> OBSIDIAN TRIBUNAL · FINAL CHARGE FILING</div>
+        <h2 id="accuseModalTitle" style="font-size:20px;margin:4px 0 0">Submit Formal <em>Accusation.</em></h2>
+      </div>
+      <button type="button" class="icon-btn close-modal-btn" data-close-modal="accuseModalBackdrop" aria-label="Close modal"><i data-lucide="x"></i></button>
+    </div>
+    <form id="accuseForm">
+      <div class="game-modal-body" style="font-size:12px;display:grid;gap:14px">
+        <div class="panel" style="background:rgba(255,82,108,0.06);border-color:rgba(255,82,108,0.25);padding:10px 14px">
+          <p style="margin:0;font-size:11px;line-height:1.5;color:#ff9fae">
+            <i data-lucide="alert-circle" style="width:13px;height:13px;vertical-align:-2px;display:inline-block"></i>
+            Accusations are evaluated against verified PostgreSQL case evidence. A correct charge solves the case (+150 pts maximum). An erroneous indictment penalizes your score by -10 points.
+          </p>
+        </div>
+
+        <div>
+          <label class="eyebrow" style="display:block;margin-bottom:6px">1. CHOOSE THE ACCUSED PERPETRATOR</label>
+          <select id="accusePersonSelect" style="width:100%;background:#09131c;color:var(--text);border:1px solid #283d4c;border-radius:8px;padding:9px;font-size:12px" required>
+            <option value="">Select suspect from interrogated roster...</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="eyebrow" style="display:block;margin-bottom:6px">2. PROVEN MOTIVE FOR THE CRIME</label>
+          <select id="accuseMotiveSelect" style="width:100%;background:#09131c;color:var(--text);border:1px solid #283d4c;border-radius:8px;padding:9px;font-size:12px" required>
+            <option value="">Select motive supported by evidence...</option>
+            <option value="compliance_coverup">Compliance Cover-up: Silence Voss before he exposes falsified safety audits & grant fraud (+25 pts)</option>
+            <option value="academic_rivalry">Academic Rivalry: Professional jealousy regarding research publication credit</option>
+            <option value="blackmail_extortion">Extortion: Financial dispute regarding private loans and extortion demands</option>
+            <option value="personal_vendetta">Personal Vendetta: Retaliation over previous disciplinary complaints</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="eyebrow" style="display:block;margin-bottom:6px">3. METHOD & PHYSICAL OPPORTUNITY</label>
+          <select id="accuseMethodSelect" style="width:100%;background:#09131c;color:var(--text);border:1px solid #283d4c;border-radius:8px;padding:9px;font-size:12px" required>
+            <option value="">Select method supported by evidence...</option>
+            <option value="service_hatch_and_calibration_weight">Service Hatch & Calibration Weight: Struck with brass weight; exited via concealed cable hatch before door latched (+25 pts)</option>
+            <option value="staged_accident">Staged Storm Accident: Tampered with antenna equipment during the blackout</option>
+            <option value="forced_entry">Forced Entry: Smashed through communications door during the power cut</option>
+            <option value="poisoning">Toxin Ingestion: Introduced lethal contaminant into lab coffee</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="eyebrow" style="display:block;margin-bottom:6px">4. INVESTIGATOR'S CLOSING INDICTMENT</label>
+          <textarea id="accuseExplanation" rows="3" style="width:100%;background:#09131c;color:var(--text);border:1px solid #283d4c;border-radius:8px;padding:9px;font-size:12px;resize:vertical;font-family:inherit" placeholder="Explain your deductive chain of evidence proving this charge..." maxlength="2000"></textarea>
+        </div>
+      </div>
+      <div class="game-modal-footer" style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
+        <button type="button" class="btn btn-quiet" data-close-modal="accuseModalBackdrop">Cancel</button>
+        <button type="submit" id="submitAccusationBtn" class="btn btn-primary" style="background:linear-gradient(90deg,#e0445d,#ff6b57);border-color:#ff7a66">
+          <i data-lucide="gavel"></i> Deliver Indictment ↗
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Case Completion & Verdict Screen -->
+<div class="game-modal-backdrop hidden" id="verdictModalBackdrop">
+  <div class="game-modal panel" role="dialog" aria-labelledby="verdictModalTitle" style="max-width:680px">
+    <div class="game-modal-head">
+      <div>
+        <div class="eyebrow" id="verdictEyebrow" style="color:var(--green)">CASE STATUS: SOLVED</div>
+        <h2 id="verdictModalTitle" style="font-size:22px;margin:4px 0 0">Case <em>Verdict.</em></h2>
+      </div>
+      <button type="button" class="icon-btn close-modal-btn" data-close-modal="verdictModalBackdrop" aria-label="Close modal"><i data-lucide="x"></i></button>
+    </div>
+    <div class="game-modal-body" style="font-size:12px;display:grid;gap:16px">
+      <div id="verdictBanner" class="panel" style="padding:16px;border-left:4px solid var(--green);background:#08181a">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <div>
+            <h3 id="verdictHeading" style="font-size:18px;color:var(--cyan);margin:0">CONVICTION SECURED</h3>
+            <p id="verdictSub" style="margin:4px 0 0;font-size:12px;color:var(--dim)">The charges have been verified by university tribunal evidence.</p>
+          </div>
+          <div style="text-align:right">
+            <div class="eyebrow">FINAL INVESTIGATION SCORE</div>
+            <div id="verdictFinalScore" style="font-size:28px;font-weight:800;color:var(--cyan)">0 PTS</div>
+            <div class="tag tag-cyan" id="verdictRankBadge" style="margin-top:4px">RANK: MASTER DETECTIVE</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Unsealed Canonical Solution -->
+      <div id="verdictSolutionSection" class="panel" style="padding:16px;background:#09121a">
+        <div class="eyebrow" style="color:var(--cyan);margin-bottom:8px"><i data-lucide="unlock" style="width:12px;height:12px;vertical-align:-1px;display:inline-block"></i> UNSEALED CANONICAL SOLUTION</div>
+        <div style="display:grid;gap:8px;font-size:11px;line-height:1.6">
+          <div><strong style="color:var(--cyan)">Perpetrator:</strong> <span id="truthCulprit">Adrian Cole (Observatory Director)</span></div>
+          <div><strong style="color:var(--cyan)">The Motive:</strong> <span id="truthMotive">Dr. Elias Voss uncovered fraudulent antenna safety records and grant fraud that Cole submitted to secure funding.</span></div>
+          <div><strong style="color:var(--cyan)">The Method & Opportunity:</strong> <span id="truthMethod">Cole used director override at 22:14, killed Voss with the brass calibration weight, and escaped through the hidden cable-service hatch before the door latched.</span></div>
+          <div><strong style="color:var(--cyan)">The 23:47 Transmission:</strong> <span id="truthTransmission">Voss recorded warning at 22:10; queued in buffer and broadcast automatically at 23:47.</span></div>
+        </div>
+      </div>
+
+      <!-- Score Breakdown Audit -->
+      <div class="panel" style="padding:14px;background:#0a131b">
+        <div class="eyebrow" style="margin-bottom:8px"><i data-lucide="database" style="width:12px;height:12px;vertical-align:-1px;display:inline-block"></i> POSTGRESQL SCORE AUDIT TRAIL</div>
+        <div id="verdictScoreEventsList" style="display:grid;gap:6px;max-height:160px;overflow-y:auto;font-size:11px"></div>
+      </div>
+    </div>
+    <div class="game-modal-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;flex-wrap:wrap;gap:10px">
+      <button type="button" class="btn btn-quiet" data-close-modal="verdictModalBackdrop"><i data-lucide="layout-dashboard"></i> Review PostgreSQL Database Records</button>
+      <button type="button" class="btn btn-primary" id="verdictReplayBtn"><i data-lucide="rotate-ccw"></i> Start New Investigation / Replay</button>
+    </div>
+  </div>
+</div>
+<div class="toast-region" id="toastRegion" aria-live="polite"></div>
+<script>window.CASEGRAPH_BOOT={selectedCaseId:{{ selected_case_id|tojson }}};</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body></html>
